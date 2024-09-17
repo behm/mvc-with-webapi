@@ -1,11 +1,16 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.ApplicationInsights.Channel;
+using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
+using System.Configuration;
 using System.Linq;
 using System.Reflection;
 using System.Web.Http;
 using System.Web.Http.Controllers;
 using System.Web.Mvc;
 using WebAppWithApi.Data;
+using WebAppWithApi.Logging;
 
 namespace WebAppWithApi.App_Start
 {
@@ -14,6 +19,8 @@ namespace WebAppWithApi.App_Start
         public static IServiceProvider ConfigureServices()
         {
             var services = new ServiceCollection();
+
+            services.ConfigureLogging();
 
             // Register Services
             services.AddTransient<IAppInfoRepo, AppInfoRepo>();
@@ -50,6 +57,47 @@ namespace WebAppWithApi.App_Start
             {
                 services.AddTransient(controllerType);
             }
+        }
+
+        public static void ConfigureLogging(this IServiceCollection services)
+        {
+            var connectionString = ConfigurationManager.ConnectionStrings["ErrorLogger"]?.ConnectionString;
+
+            services.AddLogging(configure =>
+            {
+                configure.AddConsole();
+                configure.AddApplicationInsights();
+                if (!string.IsNullOrWhiteSpace(connectionString))
+                {
+                    configure.AddDatabaseLogger(connectionString);  // note: this would take the place of Elmah logging
+                }
+            });
+
+            var config = TelemetryConfiguration.Active;
+            //config.ConnectionString = "";
+            config.TelemetryInitializers.Add(new MyTelemetryInitializer());
+
+            //services.AddSingleton<ITelemetryInitializer, MyTelemetryInitializer>();
+            //services.AddSingleton<ITelemetryChannel, InMemoryChannel>();
+            //services.AddSingleton<TelemetryConfiguration>(provider =>
+            //{
+            //    var config = TelemetryConfiguration.CreateDefault();
+            //    config.ConnectionString = "";
+            //    return config;
+            //});
+        }
+    }
+
+    public class MyTelemetryInitializer : ITelemetryInitializer
+    {
+        public void Initialize(ITelemetry telemetry)
+        {
+            // Custom telemetry initialization logic
+
+            telemetry.Context.Cloud.RoleName = "WebAppWithApi Test App";
+
+            telemetry.Context.GlobalProperties["Environment"] = "Development";  // i.e. Staging, Production, etc.
+            telemetry.Context.GlobalProperties["Version"] = "1.0.0";
         }
     }
 }
